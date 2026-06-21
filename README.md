@@ -39,6 +39,7 @@ cd fmtool
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+chmod +x fm_facepack_tool.py
 ```
 
 **Windows**
@@ -94,41 +95,6 @@ python fm_facepack_tool.py -i photo.jpg -s 300x300 --sharp
 
 ---
 
-## Building Executables
-
-### Prerequisites
-
-```bash
-pip install pyinstaller
-```
-
-### Windows (.exe)
-
-```bash
-build_windows.bat
-```
-
-Output: `dist/FMFaceTool.exe`
-
-### Linux (AppImage)
-
-Download [appimagetool](https://github.com/AppImage/AppImageKit/releases) first:
-
-```bash
-wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-chmod +x appimagetool-x86_64.AppImage
-```
-
-Then build:
-
-```bash
-./build_linux.sh
-```
-
-Output: `dist/FMFaceTool-x86_64.AppImage`
-
----
-
 ## Project Structure
 
 ```
@@ -138,9 +104,6 @@ fmtool/
     icon.ico            # App icon (Windows)
   fm_facepack_tool.py   # Application source
   requirements.txt      # Python dependencies
-  build.spec            # PyInstaller configuration
-  build_linux.sh        # Linux AppImage build script
-  build_windows.bat     # Windows .exe build script
   .gitignore
   README.md
 ```

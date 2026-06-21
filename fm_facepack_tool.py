@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """FM Player Face Tool Pro - Background removal, resize, and facepack builder.
 
 Supports both CLI batch processing and a PyQt6 GUI with drag-and-drop.
