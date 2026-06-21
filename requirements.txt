@@ -1,0 +1,4 @@
+Pillow
+rembg
+onnxruntime
+PyQt6
