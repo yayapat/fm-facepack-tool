@@ -13,7 +13,7 @@ block_cipher = None
 root = Path(SPECPATH)
 
 a = Analysis(
-    [str(root / "fm_tool.py")],
+    [str(root / "fm_facepack_tool.py")],
     pathex=[str(root)],
     binaries=[],
     datas=[

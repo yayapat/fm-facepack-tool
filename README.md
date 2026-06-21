@@ -58,7 +58,7 @@ pip install -r requirements.txt
 Run without arguments to open the graphical interface:
 
 ```bash
-python fm_tool.py
+python fm_facepack_tool.py
 ```
 
 1. Click **Add Files** or **Add Folder**, or drag and drop images into the list.
@@ -72,13 +72,13 @@ Pass `-i` to run in command-line mode:
 
 ```bash
 # Single image
-python fm_tool.py -i photo.jpg -n 12345 -o output/
+python fm_facepack_tool.py -i photo.jpg -n 12345 -o output/
 
 # Batch process a folder
-python fm_tool.py -i ./faces/ -o output/ --config
+python fm_facepack_tool.py -i ./faces/ -o output/ --config
 
 # Custom size with sharpness
-python fm_tool.py -i photo.jpg -s 300x300 --sharp
+python fm_facepack_tool.py -i photo.jpg -s 300x300 --sharp
 ```
 
 **CLI arguments**
@@ -136,7 +136,7 @@ fmtool/
   assets/
     icon.png            # App icon (Linux / PyQt6)
     icon.ico            # App icon (Windows)
-  fm_tool.py            # Application source
+  fm_facepack_tool.py   # Application source
   requirements.txt      # Python dependencies
   build.spec            # PyInstaller configuration
   build_linux.sh        # Linux AppImage build script
