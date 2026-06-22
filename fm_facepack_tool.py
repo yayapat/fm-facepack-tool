@@ -5,27 +5,118 @@ Supports both CLI batch processing and a PyQt6 GUI with drag-and-drop.
 Generates FM-compatible config.xml for portrait mapping.
 """
 
+import re
 import sys
 import argparse
+import xml.etree.ElementTree as ET
 from io import BytesIO
 from pathlib import Path
+
+TRANSLATIONS = {
+    "en": {
+        "title": "FM Player Face Tool Pro",
+        "input_images": "Input Images",
+        "add_files": "Add Files",
+        "add_folder": "Add Folder",
+        "clear": "Clear",
+        "change": "Change",
+        "size": "Size",
+        "custom": "Custom:",
+        "filename": "Filename",
+        "use_original": "Use original",
+        "custom_name": "Custom Name:",
+        "filename_hint": "e.g. player_id",
+        "enhance_sharpness": "Enhance Sharpness",
+        "generate_config": "Generate config.xml",
+        "overwrite_config": "Overwrite existing config",
+        "overwrite_dupes": "Overwrite duplicate IDs/files",
+        "map_all_png": "Map all PNGs in folder",
+        "process_images": "Process Image(s)",
+        "preview": "Preview",
+        "no_preview": "No preview",
+        "status_log_placeholder": "Status log will be displayed here...",
+        "language": "Language / ภาษา:",
+        "error_size": "Error: Enter both Width and Height for custom size.",
+        "error_custom_name": "Error: Enter a custom filename.",
+        "all_processed_success": "\nAll {} image(s) processed successfully!",
+        "finished_errors": "\nFinished with errors. Check the log above.",
+        "context_remove": "Remove Selected Item(s)",
+        "processing_header": "--- [{}/{}] ---",
+        "log_processing": "Processing: {}",
+        "log_error_not_found": "Error: File not found '{}'",
+        "log_target_size": "Target Size: {}x{} px",
+        "log_output_name": "Output Name: {}",
+        "log_sharp_enabled": "Option: Unsharp Mask Enabled",
+        "log_bg_removal": "Background Removal: Processing...",
+        "log_resizing": "Resizing: Centering image with padding...",
+        "log_saved": "Saved: {}",
+        "log_done": "Done: {}\n",
+        "log_xml_no_png": "config.xml: No processed files, skipping.",
+        "log_xml_merged": "config.xml: Merged {} new entry(ies) into existing file ({} existing).",
+        "log_xml_written": "config.xml: {} entries written.",
+    },
+    "th": {
+        "title": "FM Player Face Tool Pro",
+        "input_images": "รูปภาพ",
+        "add_files": "เพิ่มไฟล์",
+        "add_folder": "เพิ่มโฟลเดอร์",
+        "clear": "เคลียร์รายการ",
+        "change": "เปลี่ยนโฟลเดอร์",
+        "size": "ขนาด (Size)",
+        "custom": "กำหนดเอง (Custom):",
+        "filename": "ชื่อไฟล์ (Filename)",
+        "use_original": "ใช้ชื่อเดิม",
+        "custom_name": "ระบุชื่อเอง:",
+        "filename_hint": "เช่น player_id",
+        "enhance_sharpness": "เพิ่มความคมชัด (Enhance)",
+        "generate_config": "สร้างไฟล์ config.xml",
+        "overwrite_config": "เขียนทับไฟล์ config.xml เดิม",
+        "overwrite_dupes": "เขียนทับรูปภาพ/ID ที่ซ้ำกันทันที",
+        "map_all_png": "สร้าง config จากไฟล์ PNG ทั้งหมดในโฟลเดอร์",
+        "process_images": "เริ่มประมวลผล (Process)",
+        "preview": "พรีวิว (Preview)",
+        "no_preview": "ไม่มีรูปพรีวิว",
+        "status_log_placeholder": "ข้อมูลและประวัติการทำงานจะแสดงตรงนี้...",
+        "language": "ภาษา (Language):",
+        "error_size": "ข้อผิดพลาด: กรุณากรอกทั้งความกว้างและความสูงสำหรับขนาดที่กำหนดเอง",
+        "error_custom_name": "ข้อผิดพลาด: กรุณาระบุชื่อไฟล์ที่ต้องการตั้ง",
+        "all_processed_success": "\nประมวลผลรูปภาพทั้งหมด {} รูปเสร็จสมบูรณ์!",
+        "finished_errors": "\nการประมวลผลมีข้อผิดพลาด กรุณาตรวจสอบข้อมูลด้านบน",
+        "context_remove": "ลบรายการที่เลือก",
+        "processing_header": "--- รูปภาพที่ [{}/{}] ---",
+        "log_processing": "กำลังประมวลผล: {}",
+        "log_error_not_found": "ข้อผิดพลาด: ไม่พบไฟล์ '{}'",
+        "log_target_size": "ขนาดเป้าหมาย: {}x{} px",
+        "log_output_name": "ชื่อไฟล์ผลลัพธ์: {}",
+        "log_sharp_enabled": "เปิดใช้งาน: เพิ่มความคมชัดภาพ",
+        "log_bg_removal": "การลบพื้นหลัง: กำลังประมวลผล...",
+        "log_resizing": "การปรับขนาด: กำลังจัดรูปให้อยู่กึ่งกลาง...",
+        "log_saved": "เซฟไฟล์สำเร็จ: {}",
+        "log_done": "เสร็จเรียบร้อย: {}\n",
+        "log_xml_no_png": "config.xml: ไม่มีไฟล์รูปภาพสำหรับสร้าง config, ข้ามขั้นตอน",
+        "log_xml_merged": "config.xml: อัปเดตเพิ่มรายการใหม่ {} รายการ (มีอยู่เดิมแล้ว {} รายการ)",
+        "log_xml_written": "config.xml: เขียนข้อมูลสำเร็จทั้งหมด {} รายการ",
+    }
+}
 
 from PIL import Image, ImageFilter, ImageOps
 from rembg import remove
 
 try:
     from PyQt6.QtCore import Qt, QThread, pyqtSignal
-    from PyQt6.QtGui import QIcon, QImage, QIntValidator, QPixmap
+    from PyQt6.QtGui import QAction, QIcon, QImage, QIntValidator, QPixmap
     from PyQt6.QtWidgets import (
         QAbstractItemView,
         QApplication,
         QButtonGroup,
         QCheckBox,
+        QComboBox,
         QFileDialog,
         QHBoxLayout,
         QLabel,
         QLineEdit,
         QListWidget,
+        QMenu,
         QProgressBar,
         QPushButton,
         QRadioButton,
@@ -130,6 +221,62 @@ QLineEdit:focus {
 QLineEdit:disabled {
     background-color: #f1f5f9;
     color: #cbd5e1;
+}
+
+/* Dropdowns */
+QComboBox {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 5px 12px;
+    color: #334155;
+    font-weight: 500;
+}
+QComboBox:hover {
+    border-color: #cbd5e1;
+    background-color: #f1f5f9;
+}
+QComboBox:focus {
+    border-color: #818cf8;
+}
+QComboBox:disabled {
+    background-color: #f1f5f9;
+    color: #cbd5e1;
+    border-color: #e2e8f0;
+}
+QComboBox::drop-down {
+    width: 0px;
+    border: none;
+}
+QComboBox::down-arrow {
+    width: 0px;
+    height: 0px;
+    border: none;
+}
+QComboBox::down-arrow:disabled {
+    border: none;
+}
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 4px;
+    outline: 0px;
+    selection-background-color: #eef2ff;
+    selection-color: #4338ca;
+}
+QComboBox QAbstractItemView::item {
+    padding: 6px 12px;
+    border-radius: 6px;
+    color: #475569;
+}
+QComboBox QAbstractItemView::item:hover {
+    background-color: #f1f5f9;
+    color: #1e293b;
+}
+QComboBox QAbstractItemView::item:selected {
+    background-color: #eef2ff;
+    color: #4338ca;
 }
 
 /* Progress bar */
@@ -261,6 +408,7 @@ def process_fm_face(
     output_filename: str,
     enhance_sharp: bool = False,
     logger=print,
+    lang: str = "en",
 ) -> Image.Image | None:
     """Remove background, resize, and save a single face image.
 
@@ -268,9 +416,10 @@ def process_fm_face(
     """
     input_path = Path(input_image_path)
     output_dir = Path(output_folder)
+    t = TRANSLATIONS[lang]
 
     if not input_path.exists():
-        logger(f"Error: File not found '{input_path.name}'")
+        logger(t["log_error_not_found"].format(input_path.name))
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -279,12 +428,12 @@ def process_fm_face(
     clean_filename = Path(output_filename).stem + ".png"
     output_path = output_dir / clean_filename
 
-    logger(f"Processing: {input_path.name}")
-    logger(f"Target Size: {target_dimensions[0]}x{target_dimensions[1]} px")
-    logger(f"Output Name: {clean_filename}")
+    logger(t["log_processing"].format(input_path.name))
+    logger(t["log_target_size"].format(target_dimensions[0], target_dimensions[1]))
+    logger(t["log_output_name"].format(clean_filename))
     if enhance_sharp:
-        logger("Option: Unsharp Mask Enabled")
-    logger("Background Removal: Processing...")
+        logger(t["log_sharp_enabled"])
+    logger(t["log_bg_removal"])
 
     try:
         with Image.open(input_path) as img:
@@ -294,14 +443,14 @@ def process_fm_face(
 
             no_bg = remove(img, model="u2net")
 
-            logger("Resizing: Centering image with padding...")
+            logger(t["log_resizing"])
             final = resize_maintain_aspect(
                 no_bg, target_dimensions, enhance_sharp=enhance_sharp
             )
             final.save(output_path, "PNG", optimize=True)
-            logger(f"Saved: {output_path.name}")
+            logger(t["log_saved"].format(output_path.name))
 
-        logger(f"Done: {output_dir.resolve()}\n")
+        logger(t["log_done"].format(output_dir.resolve()))
         return final
     except Exception as e:
         logger(f"Error: {e}")
@@ -313,14 +462,83 @@ def process_fm_face(
 # ---------------------------------------------------------------------------
 
 
-def generate_config_xml(output_folder: str, logger=print) -> bool:
-    """Generate an FM-compatible ``config.xml`` from all PNGs in *output_folder*."""
-    output_dir = Path(output_folder)
-    png_files = sorted(output_dir.glob("*.png"))
+def _parse_existing_records(config_path: Path) -> list[tuple[str, str]]:
+    """Parse existing config.xml and return a list of (from_id, to_path) tuples, preserving order."""
+    records: list[tuple[str, str]] = []
+    if not config_path.exists():
+        return records
+    try:
+        tree = ET.parse(config_path)
+        root = tree.getroot()
+        maps_list = root.find(".//list[@id='maps']")
+        if maps_list is not None:
+            for rec in maps_list.findall("record"):
+                f = rec.get("from")
+                t = rec.get("to")
+                if f and t:
+                    records.append((f, t))
+            if records:
+                return records
+    except Exception:
+        pass
 
-    if not png_files:
-        logger("config.xml: No PNG files found, skipping.")
+    # Fallback to regex in case of XML parse errors or partial content
+    try:
+        text = config_path.read_text(encoding="utf-8")
+        pattern = r'<record\s+from="([^"]+)"\s+to="([^"]+)"\s*/?>'
+        for m in re.finditer(pattern, text):
+            records.append((m.group(1), m.group(2)))
+    except Exception:
+        pass
+    return records
+
+def generate_config_xml(
+    output_folder: str,
+    processed_names: list[str] = None,
+    overwrite: bool = False,
+    logger=print,
+    lang: str = "en",
+) -> bool:
+    """Generate or merge an FM-compatible ``config.xml`` from PNGs in *output_folder*.
+
+    If processed_names is None, scans the folder for all PNG files and maps them.
+    """
+    output_dir = Path(output_folder)
+    t = TRANSLATIONS[lang]
+    if processed_names is None:
+        png_files = sorted(output_dir.glob("*.png"))
+        processed_names = [f.stem for f in png_files]
+
+    if not processed_names:
+        logger(t["log_xml_no_png"])
         return False
+
+    config_path = output_dir / "config.xml"
+    existing_records = [] if overwrite else _parse_existing_records(config_path)
+    
+    existing_uids = {rec[0] for rec in existing_records}
+    existing_mappings = {(rec[0], rec[1]) for rec in existing_records}
+
+    all_record_lines: list[str] = []
+    # Build list of existing records to preserve them
+    for uid, target in existing_records:
+        all_record_lines.append(
+            f'\t\t<record from="{uid}" to="{target}"/>'
+        )
+
+    new_count = 0
+    # Add new records for the specified PNGs
+    for stem in processed_names:
+        uid = Path(stem).stem
+        expected_target = f"graphics/pictures/person/{uid}/portrait"
+        
+        # If this mapping is already present, skip adding a duplicate line
+        if (uid, expected_target) in existing_mappings:
+            continue
+            
+        line = f'\t\t<record from="{uid}" to="{expected_target}"/>'
+        all_record_lines.append(line)
+        new_count += 1
 
     lines = [
         "<record>",
@@ -334,18 +552,17 @@ def generate_config_xml(output_folder: str, logger=print) -> bool:
         "",
         '\t<list id="maps">',
     ]
-    for png in png_files:
-        uid = png.stem
-        lines.append(
-            f'\t\t<record from="{uid}" '
-            f'to="graphics/pictures/person/{uid}/portrait"/>'
-        )
+    lines.extend(all_record_lines)
     lines.append("\t</list>")
     lines.append("</record>")
 
-    config_path = output_dir / "config.xml"
     config_path.write_text("\n".join(lines), encoding="utf-8")
-    logger(f"config.xml: {len(png_files)} entries written.")
+    if existing_records:
+        logger(
+            t["log_xml_merged"].format(new_count, len(existing_records))
+        )
+    else:
+        logger(t["log_xml_written"].format(len(all_record_lines)))
     return True
 
 
@@ -388,6 +605,10 @@ if PYQT6_AVAILABLE:
             output_filenames: list[str],
             enhance_sharp: bool,
             gen_config: bool,
+            overwrite_config: bool = False,
+            overwrite_dupes: bool = False,
+            map_all_png: bool = False,
+            lang: str = "en",
         ):
             super().__init__()
             self.input_paths = input_paths
@@ -396,16 +617,22 @@ if PYQT6_AVAILABLE:
             self.output_filenames = output_filenames
             self.enhance_sharp = enhance_sharp
             self.gen_config = gen_config
+            self.overwrite_config = overwrite_config
+            self.overwrite_dupes = overwrite_dupes
+            self.map_all_png = map_all_png
+            self.lang = lang
 
         def run(self):
             total = len(self.input_paths)
             all_ok = True
+            t = TRANSLATIONS[self.lang]
+            processed_names = []
 
             for i, (path, name) in enumerate(
                 zip(self.input_paths, self.output_filenames)
             ):
                 self.progress_signal.emit(i, total)
-                self.status_signal.emit(f"--- [{i + 1}/{total}] ---")
+                self.status_signal.emit(t["processing_header"].format(i + 1, total))
                 result = process_fm_face(
                     path,
                     self.target_dimensions,
@@ -413,15 +640,24 @@ if PYQT6_AVAILABLE:
                     name,
                     enhance_sharp=self.enhance_sharp,
                     logger=self._log,
+                    lang=self.lang,
                 )
                 if result is None:
                     all_ok = False
                 else:
                     self.preview_signal.emit(result)
+                    processed_names.append(name)
 
             self.progress_signal.emit(total, total)
             if self.gen_config:
-                generate_config_xml(self.output_folder, logger=self._log)
+                names_to_map = None if self.map_all_png else processed_names
+                generate_config_xml(
+                    self.output_folder,
+                    processed_names=names_to_map,
+                    overwrite=self.overwrite_config,
+                    logger=self._log,
+                    lang=self.lang,
+                )
             self.finished_signal.emit(all_ok)
 
         def _log(self, text: str):
@@ -431,6 +667,7 @@ if PYQT6_AVAILABLE:
         """QListWidget subclass that accepts dropped image files/folders."""
 
         files_dropped = pyqtSignal(list)
+        delete_requested = pyqtSignal()
 
         def __init__(self, parent=None):
             super().__init__(parent)
@@ -439,6 +676,8 @@ if PYQT6_AVAILABLE:
             self.setSelectionMode(
                 QAbstractItemView.SelectionMode.ExtendedSelection
             )
+            self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.customContextMenuRequested.connect(self._show_context_menu)
 
         def dragEnterEvent(self, event):
             if event.mimeData().hasUrls():
@@ -467,6 +706,26 @@ if PYQT6_AVAILABLE:
                 self.files_dropped.emit(paths)
             event.acceptProposedAction()
 
+        def keyPressEvent(self, event):
+            if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                self.delete_requested.emit()
+            else:
+                super().keyPressEvent(event)
+
+        def _show_context_menu(self, pos):
+            if not self.selectedItems():
+                return
+            menu = QMenu(self)
+            parent_window = self.window()
+            lang = "en"
+            if hasattr(parent_window, "current_lang"):
+                lang = parent_window.current_lang
+            
+            remove_action = QAction(TRANSLATIONS[lang]["context_remove"], self)
+            remove_action.triggered.connect(self.delete_requested.emit)
+            menu.addAction(remove_action)
+            menu.exec(self.mapToGlobal(pos))
+
     class FMGraphicsApp(QWidget):
         """Main application window."""
 
@@ -474,13 +733,24 @@ if PYQT6_AVAILABLE:
             super().__init__()
             self.file_list: list[str] = []
             self.selected_output_dir = str(Path("fm_outputs").resolve())
+            
+            # Load language preference from QSettings
+            from PyQt6.QtCore import QSettings
+            self.settings = QSettings("FMPortraitTool", "FMFacepackToolPro")
+            self.current_lang = self.settings.value("language", "en")
+            if self.current_lang not in TRANSLATIONS:
+                self.current_lang = "en"
+
             self._init_ui()
+            self.file_list_widget.delete_requested.connect(self._remove_selected_files)
+            self._apply_language()
+            self._toggle_config_options()
 
         # ---- UI construction -------------------------------------------------
 
         def _init_ui(self):
             self.setWindowTitle("FM Player Face Tool Pro")
-            self.resize(720, 680)
+            self.resize(720, 710)
             self.setStyleSheet(STYLESHEET)
             icon_path = Path(__file__).resolve().parent / "assets" / "icon.png"
             if icon_path.exists():
@@ -490,10 +760,12 @@ if PYQT6_AVAILABLE:
             root.setSpacing(12)
             root.setContentsMargins(24, 24, 24, 24)
 
+            root.addLayout(self._build_title_bar())
             root.addLayout(self._build_file_header())
             root.addWidget(self._build_file_list())
             root.addLayout(self._build_output_row())
             root.addLayout(self._build_size_row())
+            root.addLayout(self._build_filename_row())
             root.addLayout(self._build_options_row())
             root.addWidget(self._build_run_button())
             root.addWidget(self._build_progress_bar())
@@ -501,26 +773,51 @@ if PYQT6_AVAILABLE:
 
             self.setLayout(root)
 
+        def _build_title_bar(self) -> QHBoxLayout:
+            row = QHBoxLayout()
+            self.lbl_title = QLabel()
+            self.lbl_title.setStyleSheet(
+                "font-weight: 700; color: #4f46e5; font-size: 16px;"
+            )
+            
+            self.lbl_lang = QLabel()
+            self.lbl_lang.setStyleSheet("color: #64748b; font-weight: 500;")
+            self.cmb_lang = QComboBox()
+            self.cmb_lang.addItem("English", "en")
+            self.cmb_lang.addItem("ไทย", "th")
+            self.cmb_lang.setFixedWidth(100)
+            
+            idx = self.cmb_lang.findData(self.current_lang)
+            if idx >= 0:
+                self.cmb_lang.setCurrentIndex(idx)
+            self.cmb_lang.currentIndexChanged.connect(self._change_language)
+            
+            row.addWidget(self.lbl_title)
+            row.addStretch()
+            row.addWidget(self.lbl_lang)
+            row.addWidget(self.cmb_lang)
+            return row
+
         def _build_file_header(self) -> QHBoxLayout:
             row = QHBoxLayout()
-            lbl = QLabel("Input Images")
-            lbl.setStyleSheet(
+            self.lbl_file_header = QLabel()
+            self.lbl_file_header.setStyleSheet(
                 "font-weight: 600; color: #1e293b; font-size: 13px;"
             )
-            btn_files = QPushButton("Add Files")
-            btn_folder = QPushButton("Add Folder")
-            btn_clear = QPushButton("Clear")
-            btn_clear.setObjectName("btn_clear")
+            self.btn_files = QPushButton()
+            self.btn_folder = QPushButton()
+            self.btn_clear = QPushButton()
+            self.btn_clear.setObjectName("btn_clear")
 
-            btn_files.clicked.connect(self._browse_files)
-            btn_folder.clicked.connect(self._browse_folder)
-            btn_clear.clicked.connect(self._clear_files)
+            self.btn_files.clicked.connect(self._browse_files)
+            self.btn_folder.clicked.connect(self._browse_folder)
+            self.btn_clear.clicked.connect(self._clear_files)
 
-            row.addWidget(lbl)
+            row.addWidget(self.lbl_file_header)
             row.addStretch()
-            row.addWidget(btn_files)
-            row.addWidget(btn_folder)
-            row.addWidget(btn_clear)
+            row.addWidget(self.btn_files)
+            row.addWidget(self.btn_folder)
+            row.addWidget(self.btn_clear)
             return row
 
         def _build_file_list(self) -> DropListWidget:
@@ -537,23 +834,23 @@ if PYQT6_AVAILABLE:
             self.lbl_output_path.setStyleSheet(
                 "color: #6366f1; font-weight: 600;"
             )
-            btn = QPushButton("Change")
-            btn.clicked.connect(self._browse_output_folder)
+            self.btn_change_output = QPushButton()
+            self.btn_change_output.clicked.connect(self._browse_output_folder)
             row.addWidget(self.lbl_output_path, stretch=4)
-            row.addWidget(btn, stretch=0)
+            row.addWidget(self.btn_change_output, stretch=0)
             return row
 
         def _build_size_row(self) -> QHBoxLayout:
             row = QHBoxLayout()
-            lbl = QLabel("Size")
-            lbl.setStyleSheet("font-weight: 600; color: #1e293b;")
-            row.addWidget(lbl)
+            self.lbl_size_title = QLabel()
+            self.lbl_size_title.setStyleSheet("font-weight: 600; color: #1e293b;")
+            row.addWidget(self.lbl_size_title)
 
             self.btn_group = QButtonGroup(self)
             self.rad_220 = QRadioButton("220 x 276")
             self.rad_220.setChecked(True)
             self.rad_192 = QRadioButton("192 x 192")
-            self.rad_custom = QRadioButton("Custom:")
+            self.rad_custom = QRadioButton()
             for rb in (self.rad_220, self.rad_192, self.rad_custom):
                 self.btn_group.addButton(rb)
                 row.addWidget(rb)
@@ -581,20 +878,76 @@ if PYQT6_AVAILABLE:
             self.btn_group.buttonToggled.connect(self._toggle_custom_inputs)
             return row
 
-        def _build_options_row(self) -> QHBoxLayout:
+        def _build_filename_row(self) -> QHBoxLayout:
             row = QHBoxLayout()
-            self.chk_sharp = QCheckBox("Enhance Sharpness")
-            self.chk_sharp.setStyleSheet("color: #f59e0b;")
-            self.chk_config = QCheckBox("Generate config.xml")
-            self.chk_config.setChecked(True)
-            self.chk_config.setStyleSheet("color: #6366f1;")
-            row.addWidget(self.chk_sharp)
-            row.addWidget(self.chk_config)
+            self.lbl_filename_title = QLabel()
+            self.lbl_filename_title.setStyleSheet("font-weight: 600; color: #1e293b;")
+            row.addWidget(self.lbl_filename_title)
+
+            self.filename_group = QButtonGroup(self)
+            self.rad_orig_name = QRadioButton()
+            self.rad_orig_name.setChecked(True)
+            self.rad_custom_name = QRadioButton()
+            
+            self.filename_group.addButton(self.rad_orig_name)
+            self.filename_group.addButton(self.rad_custom_name)
+
+            row.addWidget(self.rad_orig_name)
+            row.addWidget(self.rad_custom_name)
+
+            self.txt_custom_name = QLineEdit()
+            self.txt_custom_name.setFixedWidth(120)
+            self.txt_custom_name.setEnabled(False)
+            row.addWidget(self.txt_custom_name)
             row.addStretch()
+
+            self.filename_group.buttonToggled.connect(self._toggle_filename_inputs)
             return row
 
+        def _build_options_row(self) -> QVBoxLayout:
+            layout = QVBoxLayout()
+            layout.setSpacing(8)
+            
+            row1 = QHBoxLayout()
+            self.chk_sharp = QCheckBox()
+            self.chk_sharp.setStyleSheet("color: #f59e0b; font-weight: 500;")
+            
+            self.chk_config = QCheckBox()
+            self.chk_config.setChecked(True)
+            self.chk_config.setStyleSheet("color: #6366f1; font-weight: 500;")
+            self.chk_config.toggled.connect(self._toggle_config_options)
+            
+            row1.addWidget(self.chk_sharp)
+            row1.addWidget(self.chk_config)
+            row1.addStretch()
+            
+            row2 = QHBoxLayout()
+            row2.setContentsMargins(20, 0, 0, 0)
+            row2.setSpacing(16)
+            
+            self.chk_overwrite = QCheckBox()
+            self.chk_overwrite.setChecked(False)
+            self.chk_overwrite.setStyleSheet("color: #475569;")
+            
+            self.chk_overwrite_dupes = QCheckBox()
+            self.chk_overwrite_dupes.setChecked(False)
+            self.chk_overwrite_dupes.setStyleSheet("color: #475569;")
+            
+            self.chk_map_all = QCheckBox()
+            self.chk_map_all.setChecked(False)
+            self.chk_map_all.setStyleSheet("color: #475569;")
+            
+            row2.addWidget(self.chk_overwrite)
+            row2.addWidget(self.chk_overwrite_dupes)
+            row2.addWidget(self.chk_map_all)
+            row2.addStretch()
+            
+            layout.addLayout(row1)
+            layout.addLayout(row2)
+            return layout
+
         def _build_run_button(self) -> QPushButton:
-            self.btn_run = QPushButton("Process Image(s)")
+            self.btn_run = QPushButton()
             self.btn_run.setObjectName("btn_run")
             self.btn_run.setEnabled(False)
             self.btn_run.clicked.connect(self._start_processing)
@@ -612,19 +965,19 @@ if PYQT6_AVAILABLE:
             # Preview
             preview_col = QVBoxLayout()
             preview_col.setSpacing(6)
-            lbl_title = QLabel("Preview")
-            lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl_title.setStyleSheet(
+            self.lbl_preview_title = QLabel()
+            self.lbl_preview_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.lbl_preview_title.setStyleSheet(
                 "font-weight: 600; color: #64748b; font-size: 11px;"
             )
-            self.lbl_preview = QLabel("No preview")
+            self.lbl_preview = QLabel()
             self.lbl_preview.setFixedSize(180, 220)
             self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.lbl_preview.setStyleSheet(
                 "background-color: #f8fafc; border: 1px solid #e2e8f0;"
                 "border-radius: 10px; color: #cbd5e1; font-size: 12px;"
             )
-            preview_col.addWidget(lbl_title)
+            preview_col.addWidget(self.lbl_preview_title)
             preview_col.addWidget(self.lbl_preview)
             preview_col.addStretch()
             panel.addLayout(preview_col)
@@ -632,13 +985,58 @@ if PYQT6_AVAILABLE:
             # Log
             self.log_output = QTextEdit()
             self.log_output.setReadOnly(True)
-            self.log_output.setPlaceholderText(
-                "Status log will be displayed here..."
-            )
             panel.addWidget(self.log_output, stretch=1)
             return panel
 
         # ---- Slots -----------------------------------------------------------
+
+        def _change_language(self):
+            lang = self.cmb_lang.currentData()
+            if lang and lang != self.current_lang:
+                self.current_lang = lang
+                self.settings.setValue("language", lang)
+                self._apply_language()
+
+        def _apply_language(self):
+            t = TRANSLATIONS[self.current_lang]
+            self.setWindowTitle(t["title"])
+            self.lbl_title.setText(t["title"])
+            self.lbl_lang.setText(t["language"])
+            
+            # File header
+            self.lbl_file_header.setText(t["input_images"])
+            self.btn_files.setText(t["add_files"])
+            self.btn_folder.setText(t["add_folder"])
+            self.btn_clear.setText(t["clear"])
+            
+            # Output row
+            self.btn_change_output.setText(t["change"])
+            
+            # Size row
+            self.lbl_size_title.setText(t["size"])
+            self.rad_custom.setText(t["custom"])
+            
+            # Filename row
+            self.lbl_filename_title.setText(t["filename"])
+            self.rad_orig_name.setText(t["use_original"])
+            self.rad_custom_name.setText(t["custom_name"])
+            self.txt_custom_name.setPlaceholderText(t["filename_hint"])
+            
+            # Options row
+            self.chk_sharp.setText(t["enhance_sharpness"])
+            self.chk_config.setText(t["generate_config"])
+            self.chk_overwrite.setText(t["overwrite_config"])
+            self.chk_overwrite_dupes.setText(t["overwrite_dupes"])
+            self.chk_map_all.setText(t["map_all_png"])
+            
+            # Process button
+            self.btn_run.setText(t["process_images"])
+            
+            # Preview and Log
+            self.lbl_preview_title.setText(t["preview"])
+            if not self.file_list:
+                self.lbl_preview.setText(t["no_preview"])
+            self.log_output.setPlaceholderText(t["status_log_placeholder"])
 
         def _toggle_custom_inputs(self):
             is_custom = self.rad_custom.isChecked()
@@ -647,6 +1045,34 @@ if PYQT6_AVAILABLE:
             if not is_custom:
                 self.txt_width.clear()
                 self.txt_height.clear()
+
+        def _toggle_filename_inputs(self):
+            is_custom = self.rad_custom_name.isChecked()
+            self.txt_custom_name.setEnabled(is_custom)
+            if not is_custom:
+                self.txt_custom_name.clear()
+
+        def _toggle_config_options(self):
+            enabled = self.chk_config.isChecked()
+            self.chk_overwrite.setEnabled(enabled)
+            self.chk_overwrite_dupes.setEnabled(enabled)
+            self.chk_map_all.setEnabled(enabled)
+
+        def _remove_selected_files(self):
+            selected_rows = [self.file_list_widget.row(item) for item in self.file_list_widget.selectedItems()]
+            if not selected_rows:
+                return
+            
+            # Sort in descending order to avoid index shifts when deleting
+            for row in sorted(selected_rows, reverse=True):
+                if 0 <= row < len(self.file_list):
+                    self.file_list.pop(row)
+                    self.file_list_widget.takeItem(row)
+            
+            self.btn_run.setEnabled(bool(self.file_list))
+            if not self.file_list:
+                self.lbl_preview.setPixmap(QPixmap())
+                self.lbl_preview.setText(TRANSLATIONS[self.current_lang]["no_preview"])
 
         def _add_files(self, paths: list[str]):
             """Append *paths* to the input list, skipping duplicates."""
@@ -685,7 +1111,7 @@ if PYQT6_AVAILABLE:
             self.file_list_widget.clear()
             self.btn_run.setEnabled(False)
             self.lbl_preview.setPixmap(QPixmap())
-            self.lbl_preview.setText("No preview")
+            self.lbl_preview.setText(TRANSLATIONS[self.current_lang]["no_preview"])
 
         def _browse_output_folder(self):
             folder = QFileDialog.getExistingDirectory(
@@ -704,7 +1130,55 @@ if PYQT6_AVAILABLE:
             if target_dims is None:
                 return
 
-            output_names = [Path(p).stem for p in self.file_list]
+            use_custom_name = self.rad_custom_name.isChecked()
+            custom_name = ""
+            if use_custom_name:
+                custom_name = self.txt_custom_name.text().strip()
+                if not custom_name:
+                    t = TRANSLATIONS[self.current_lang]
+                    self.log_output.setText(t["error_custom_name"])
+                    return
+
+            overwrite_config = self.chk_overwrite.isChecked()
+            overwrite_dupes = self.chk_overwrite_dupes.isChecked()
+
+            output_names = []
+            used_in_batch = set()
+
+            # Get existing UIDs from config if we are NOT overwriting config, and we are NOT overwriting dupes
+            existing_uids = set()
+            if self.chk_config.isChecked() and not overwrite_config and not overwrite_dupes:
+                config_path = Path(self.selected_output_dir) / "config.xml"
+                existing_records = _parse_existing_records(config_path)
+                existing_uids = {rec[0] for rec in existing_records}
+
+            for i, img_path in enumerate(self.file_list):
+                if use_custom_name:
+                    base_name = custom_name
+                else:
+                    base_name = Path(img_path).stem
+
+                final_name = base_name
+                
+                # Resolve naming collisions:
+                # 1. Already used in this batch
+                # 2. OR (overwrite_dupes is False and (exists in config or on disk))
+                counter = 1
+                while (
+                    final_name in used_in_batch
+                    or (
+                        not overwrite_dupes
+                        and (
+                            final_name in existing_uids
+                            or (Path(self.selected_output_dir) / f"{final_name}.png").exists()
+                        )
+                    )
+                ):
+                    final_name = f"{base_name}_{counter}"
+                    counter += 1
+                
+                used_in_batch.add(final_name)
+                output_names.append(final_name)
 
             self.btn_run.setEnabled(False)
             self.progress_bar.setRange(0, len(self.file_list))
@@ -718,6 +1192,10 @@ if PYQT6_AVAILABLE:
                 output_names,
                 self.chk_sharp.isChecked(),
                 self.chk_config.isChecked(),
+                overwrite_config=overwrite_config,
+                overwrite_dupes=overwrite_dupes,
+                map_all_png=self.chk_map_all.isChecked(),
+                lang=self.current_lang,
             )
             self._worker.status_signal.connect(self._on_log)
             self._worker.progress_signal.connect(self._on_progress)
@@ -735,7 +1213,7 @@ if PYQT6_AVAILABLE:
             h_str = self.txt_height.text().strip()
             if not w_str or not h_str:
                 self.log_output.setText(
-                    "Error: Enter both Width and Height for custom size."
+                    TRANSLATIONS[self.current_lang]["error_size"]
                 )
                 return None
             return (int(w_str), int(h_str))
@@ -764,14 +1242,11 @@ if PYQT6_AVAILABLE:
             self.progress_bar.setValue(self.progress_bar.maximum())
             self.btn_run.setEnabled(True)
             n = len(self.file_list)
+            t = TRANSLATIONS[self.current_lang]
             if success:
-                self.log_output.append(
-                    f"\nAll {n} image(s) processed successfully!"
-                )
+                self.log_output.append(t["all_processed_success"].format(n))
             else:
-                self.log_output.append(
-                    "\nFinished with errors. Check the log above."
-                )
+                self.log_output.append(t["finished_errors"])
 
 
 # ---------------------------------------------------------------------------
@@ -797,20 +1272,60 @@ def _run_cli(args: argparse.Namespace):
     if is_batch:
         print(f"Batch mode: {len(image_paths)} images found.")
 
-    all_ok = True
+    # Resolve output names
+    output_names = []
+    used_in_batch = set()
+    
+    existing_uids = set()
+    if args.config and not args.overwrite_config and not args.overwrite_dupes:
+        config_path = Path(args.output) / "config.xml"
+        existing_records = _parse_existing_records(config_path)
+        existing_uids = {rec[0] for rec in existing_records}
+
     for i, img_path in enumerate(image_paths):
+        if not is_batch and args.name:
+            base_name = args.name
+        else:
+            base_name = Path(img_path).stem
+
+        final_name = base_name
+        counter = 1
+        while (
+            final_name in used_in_batch
+            or (
+                not args.overwrite_dupes
+                and (
+                    final_name in existing_uids
+                    or (Path(args.output) / f"{final_name}.png").exists()
+                )
+            )
+        ):
+            final_name = f"{base_name}_{counter}"
+            counter += 1
+            
+        used_in_batch.add(final_name)
+        output_names.append(final_name)
+
+    all_ok = True
+    processed_names = []
+    for i, (img_path, name) in enumerate(zip(image_paths, output_names)):
         if is_batch:
             print(f"--- [{i + 1}/{len(image_paths)}] ---")
-        # In batch mode always use the original filename
-        name = Path(img_path).stem if is_batch else (args.name or Path(img_path).stem)
         result = process_fm_face(
             img_path, target_dims, args.output, name, enhance_sharp=args.sharp
         )
         if result is None:
             all_ok = False
+        else:
+            processed_names.append(name)
 
     if args.config:
-        generate_config_xml(args.output)
+        names_to_map = None if args.map_all_png else processed_names
+        generate_config_xml(
+            args.output,
+            processed_names=names_to_map,
+            overwrite=args.overwrite_config,
+        )
 
     sys.exit(0 if all_ok else 1)
 
@@ -852,6 +1367,18 @@ def main():
     )
     parser.add_argument(
         "--config", action="store_true", help="Generate config.xml"
+    )
+    parser.add_argument(
+        "--overwrite-config", action="store_true",
+        help="Overwrite existing config.xml completely instead of merging"
+    )
+    parser.add_argument(
+        "--overwrite-dupes", action="store_true",
+        help="Overwrite duplicate IDs/files instead of appending suffixes"
+    )
+    parser.add_argument(
+        "--map-all-png", action="store_true",
+        help="Scan and map all PNGs in the output folder"
     )
     args = parser.parse_args()
 
